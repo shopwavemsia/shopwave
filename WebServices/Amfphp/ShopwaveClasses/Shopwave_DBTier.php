@@ -1,5 +1,5 @@
 <?php
-    include dirname(__FILE__) . '/Shopwave_Common.php';
+    //include dirname(__FILE__) . '/Shopwave_Common.php';
     
     define("Config", "Config.ini");
         
@@ -7,42 +7,64 @@
     {
         private $config = Config;      
         private $dbh;
-        private $error_str;
-    
+        
+        
+        private $dsn;
+        private $user;
+        private $pass;
+        private $options;
         
         public function __construct()
-        {                      
-            $settings   = parse_ini_file($this->config, TRUE);
-            $host       = $settings['DB_setting']['db_Host'];
-            $dbname     = $settings['DB_setting']['db_Name'];
-            $user       = $settings['DB_setting']['db_User'];
-            $pass       = $settings['DB_setting']['db_Pass'];
-            
-            // Set DSN                     
-            $dsn = 'mysql:host=' . $host . ';dbname=' . $dbname;
-            // Set options
-            $options = array(
-                PDO::ATTR_PERSISTENT    => true,
-                PDO::ATTR_ERRMODE       => PDO::ERRMODE_EXCEPTION
-            );
-            // Create a new PDO instanace
+        {                                    
             try{
-                $this->dbh = new PDO($dsn, $user, $pass, $options);
+                $Util->logging('__construct');
+                $settings       = parse_ini_file($this->config, TRUE);
+                $host           = $settings['DB_setting']['db_Host'];
+                $dbname         = $settings['DB_setting']['db_Name'];
+                $this->user     = $settings['DB_setting']['db_User'];
+                $this->pass     = $settings['DB_setting']['db_Pass'];
+            
+                // Set DSN                     
+                $this->dsn = 'mysql:host=' . $host . ';dbname=' . $dbname;
+                // Set options
+                $this->options = array(
+                    PDO::ATTR_PERSISTENT    => true,
+                    PDO::ATTR_ERRMODE       => PDO::ERRMODE_EXCEPTION
+                );    
             }
-            // Catch any errors
-            catch(PDOException $e){
-                $this->error_str = $e->getMessage();
-                $this->dbh = null;
-
+            catch (Exception $e){
+                $Util = new Util();
+                $Util->logging('[DBTier->Construct]'.$e->getMessage());
             }
+            catch (PDOException $e) {
+                $Util = new Util();
+                $Util->logging('[DBTier->Construct]'.$e->getMessage());                
+            }                       
         }
-        public function getDB()
+        public function __destruct()
         {
-            return $this->dbh;
+            try {                
+                $this->dbh = null; //Closes connection
+            } catch (PDOException $e) {
+                $Util = new Util();
+                $Util->logging('[DBTier->Destruct]'.$e->getMessage());
+            }
         }
-       
+     
+        public function connect()
+        {
+            try{                
+                $this->dbh = new PDO($this->dsn, $this->user, $this->pass, $this->options);
+                return true;
+            }
+            catch(PDOException $e){                
+                $GLOBALS['Util']->logging($e->getMessage());
+                return false;
+            }            
+        }
+        
         public function destroy()
-        {
+        {           
             $this->dbh = null;
         }
         

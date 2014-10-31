@@ -7,11 +7,11 @@
     {
 	private $config = Config; 	
 	private $MobileNo;
-	private $Type;
-	//private $Content;
+	private $Type;	
 	private $smsURL;
-	private $Template_Id_OTP;
+	private $Template_Id_REG;
 	private $Template_Id;
+	private $Pin_Code_Purpose_Type_REG;
 	
 	public function __construct()
 	{
@@ -22,7 +22,8 @@
 	    $Signature 		= $settings['SMS_setting']['sms_Signature'];
 	    $ServiceId 		= $settings['SMS_setting']['sms_Service_Id'];
 	    $ExpInterval 	= $settings['SMS_setting']['sms_Exp_Interval'];
-	    $this->Template_Id_OTP = $settings['SMS_setting']['sms_Template_Id_OTP'];	    
+	    $this->Template_Id_REG 		= $settings['SMS_setting']['sms_Template_Id_REG'];
+	    $this->Pin_Code_Purpose_Type_REG 	= $settings['Sys_setting']['Pin_Code_Purpose_Type_REG'];	    
 	    
 	    $this->smsURL	= $settings['SMS_setting']['sms_URL'];
 	    $this->smsURL	= str_replace('<sms_Username>',	 	'=' . $User, 		$this->smsURL);
@@ -33,34 +34,43 @@
 	}
 	
 	public function Sent()
-	{
-	    //$status = file_get_contents("https://www.etracker.cc/mes/mesbulk.aspx?user=mktest69&pass=pos1511adsb&type=0&to=".$this->MobileNo."&from=Shopwave&text=".$this->Content."&servid=MES01");
-	    //return $status;
-	    	    	
+	{	    
 	    if (!is_null($this->MobileNo) && !empty($this->MobileNo)){
-		    
+		
 		$Content = $this->SmsTemplate_Get($this->Template_Id);
-		    
+		
 		if (!is_null($Content) && !empty($Content)){
 			$Content = $this->Template_Value_Replace($this->MobileNo, $this->Type, $Content);
 			$Content = str_replace(' ', '+', $Content);
-			$smsURL  = str_replace('<Content>', $Content, $this->smsURL);
+		
+			$smsURL  = str_replace('<Content>', '='.$Content, $this->smsURL);
 			
-			$arrlength = count($this->MobileNo);			
-			for($x=0; $x<$arrlength; $x++){
-			    $smsURL = str_replace('<Mobile_No>', $this->MobileNo[$x], $this->smsURL);
+			$arrlength = count($this->MobileNo);
+			if ($arrlength == 1){			
+			    $smsURL = str_replace('<Mobile_No>', '=' . $this->MobileNo, $smsURL);			
+			    //$status = file_get_contents($smsURL);
+			    $status = '60123910924,2582196424,200';
+			    $statuses = explode(",", $status);
 			    
-			    $status = file_get_contents($smsURL);//$this->smsURL;
-			    return $status;
+			    if ($statuses[2] == 200){
+			        $this->SMS_Sent_Insert($this->MobileNo, str_replace('+', ' ', $Content), $statuses[2], $statuses[1]);
+			    }
 			}
-			
+			else{
+			    for($x=0; $x<$arrlength; $x++){
+				$smsURL = str_replace('<Mobile_No>', '=' . $this->MobileNo[$x], $smsURL);				
+				$status = file_get_contents($smsURL);
+			    }    
+			}
+
+			return $status;
 		    }
 		else{
-			return ErrCode::vfPin_Template_not_found;
+			return ErrCode::vfPin_Template_not_Found;
 		    }
 		}
 	    else{
-		    return ErrCode::vfPin_InvalidPhone;
+		    return ErrCode::vfPin_Invalid_Phone;
 		}
 	    
 	    return $details;
@@ -72,26 +82,67 @@
 	    	
 	public function Type($pType)
         {
-	    $this->type = $pType;
+	    $this->Type = $pType;
 	    switch ($pType) {
-		case 'OTP':
-		    $this->Template_Id = $this->Template_Id_OTP;
+		case 'REGISTRATION':
+		    $this->Template_Id = $this->Template_Id_REG;
 		    break;
 	    }	
         }
-	
-	public function SmsTemplate_Get($Template_Id)
+    
+	public function SMS_Sent_Insert($Mobile_No, $Content, $Response_Code, $MsgId)
 	{
 	    try{
-		$db = new DBTier();
-		$sql = 'select Content from SMS_template where SMS_Template_Id = :SMS_Template_Id';
-				
+	
+		$db = $GLOBALS['DBTier'];
+		$Updated_By = 'admin';
+		$Created_By = 'admin';
+		if ($Response_Code = 200) {$Sent_Status = 'SUCCESS';}
+		else {$Sent_Status = 'FAILED';}
+		$sql = 'INSERT INTO SMS_Sent (Mobile_No,Content,Sent_Status,MsgId,Response_Code,Updated_By,Updated_Date,Created_By,Created_Date)
+			VALUES(:Mobile_No,:Content,:Sent_Status,:MsgId,:Response_Code,:Updated_By,now(),:Created_By,now())';
+		$db->query($sql);
+		$db->bind(':Mobile_No', $Mobile_No);
+		$db->bind(':Content', $Content);
+		$db->bind(':Sent_Status', $Sent_Status);
+		$db->bind(':MsgId', $MsgId);
+		$db->bind(':Response_Code', $Response_Code);
+		$db->bind(':Updated_By', $Updated_By);
+		$db->bind(':Created_By', $Created_By);
+		$result = $db->execute();// or die(mysql_error());
+		
+		if ($result == 1){
+		    $New = 'NEW';
+		    $sql = 'Update Pin_Code set MsgId = :MsgId, Response_Code = :Response_Code where Mobile_No = :Mobile_No and Status = :Status';
+		    $db->query($sql);
+		    $db->bind(':MsgId', $MsgId);
+		    $db->bind(':Response_Code', $Response_Code);
+		    $db->bind(':Mobile_No', $Mobile_No);
+		    $db->bind(':Status', $New);
+		    $result = $db->execute();
+		}
+		//$result = $db->single();					
+		
+		//return $result['Content'];	
+	    }
+	    catch(PDOException $e)
+	    {
+		return '';
+	    }
+	}
+	public function SmsTemplate_Get($Template_Id)
+	{
+	    
+	    try{
+	
+		$db = $GLOBALS['DBTier'];	
+		$sql = 'select Content from SMS_template where SMS_Template_Id = :SMS_Template_Id';	
 		$db->query($sql);
 		$db->bind(':SMS_Template_Id', $Template_Id);	    
 		$db->execute();// or die(mysql_error());
 		$result = $db->single();
 			
-		$db->destroy();
+		//$db->destroy();
 		
 		return $result['Content'];	
 	    }
@@ -104,10 +155,10 @@
 	public function Template_Value_Replace($Mobile_No, $Type, $Content)
 	{
 	    switch($Type){
-		case 'OTP':
-		    $Pin = $this->Pin_Code_Generate($Mobile_No, $Type);
+		case 'REGISTRATION':
+		    $Pin = $this->Pin_Code_Generate($Mobile_No, $this->Pin_Code_Purpose_Type_REG);
 		    if (!is_null($Pin)){
-			$Content = str_replace('<PIN>', $Pin, $Content);			
+			$Content = str_replace('[PIN]', $Pin, $Content);			
 		    }
 	    }
 	    
@@ -116,7 +167,7 @@
 	
 	public function Pin_Code_Generate($Mobile_No, $Type)
 	{
-            $db = new DBTier();	 
+            $db = $GLOBALS['DBTier'];		 
 	    $db->query("CALL Pin_Code_Create(:Mobile_No, :Type, @Pin)");
 	  
 	    $db->bind(':Mobile_No', $Mobile_No);
@@ -125,7 +176,7 @@
             
             $db->query('select @Pin');
             $result = $db->single();
-            $db->destroy();
+            //$db->destroy();
             
             return $result['@Pin'];
         }
